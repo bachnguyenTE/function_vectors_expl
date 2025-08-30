@@ -156,9 +156,17 @@ def set_seed(seed: int) -> None:
 
     # Torch seed
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
+    
+    # Platform-specific seeds
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = True
+    
+    # MPS seed for macOS
+    import platform
+    if platform.system() == "Darwin" and torch.backends.mps.is_available():
+        torch.mps.manual_seed(seed)
 
     # os seed
     os.environ['PYTHONHASHSEED'] = str(seed)

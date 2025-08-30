@@ -7,6 +7,7 @@ from utils.prompt_utils import *
 from utils.intervention_utils import *
 from utils.model_utils import *
 from utils.extract_utils import *
+from utils.device_utils import get_optimal_device
 
 
 
@@ -21,7 +22,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_shots', help="Number of shots in each in-context prompt", required=False, default=10)
     parser.add_argument('--n_trials', help="Number of in-context prompts to average over", required=False, default=100)
     parser.add_argument('--test_split', help="Percentage corresponding to test set split size", required=False, default=0.3)
-    parser.add_argument('--device', help='Device to run on', required=False, default='cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--device', help='Device to run on', required=False, default=get_optimal_device())
     parser.add_argument('--prefixes', help='Prompt template prefixes to be used', type=json.loads, required=False, default={"input":"Q:", "output":"A:", "instructions":""})
     parser.add_argument('--separators', help='Prompt template separators to be used', type=json.loads, required=False, default={"input":"\n", "output":"\n\n", "instructions":""})    
     parser.add_argument('--revision', help='Specify model checkpoints for pythia or olmo models', type=str, required=False, default=None)

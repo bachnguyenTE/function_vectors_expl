@@ -7,11 +7,13 @@ from utils.prompt_utils import load_dataset
 from utils.extract_utils import get_mean_head_activations, compute_universal_function_vector
 from utils.eval_utils import n_shot_eval_no_intervention, n_shot_eval
 from utils.model_utils import load_gpt_model_and_tokenizer, set_seed
+from utils.device_utils import get_optimal_device, to_device, zeros_like_on_device, randn_like_on_device
 
 def optim_loop(v_n, target, decoder, loss_fn, optimizer, n_steps:int=1000, verbose:bool=False, restrict_vocab:int=50400):
+    device = next(decoder.parameters()).device  # Get device from decoder
     if target.shape[-1] != restrict_vocab:
         inds = torch.topk(target, restrict_vocab).indices[0]
-        Z = torch.zeros(target.size()).cuda()
+        Z = torch.zeros(target.size()).to(device)
         Z[:,inds] = target[:,inds]
     else:
         Z = target
@@ -88,7 +90,7 @@ def vocab_reconstruction(datasets, n_steps:int=1000, lr:float=0.5, n_seeds:int=5
             for j, vocab_size in enumerate(restrict_vocab_list):
                 # Enable Gradients for Optimization
                 torch.set_grad_enabled(True)
-                v_n = torch.randn(fv.size()).cuda()
+                v_n = torch.randn(fv.size()).to(model.device)
                 v_n.requires_grad=True
 
                 # Optim setup

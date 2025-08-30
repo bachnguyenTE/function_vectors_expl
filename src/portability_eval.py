@@ -8,6 +8,7 @@ from utils.intervention_utils import *
 from utils.model_utils import *
 from utils.eval_utils import *
 from utils.extract_utils import *
+from utils.device_utils import get_optimal_device
 
 
 if __name__ == "__main__":
@@ -23,7 +24,7 @@ if __name__ == "__main__":
     parser.add_argument('--root_data_dir', help='Root directory of data files', type=str, required=False, default='../dataset_files')
     parser.add_argument('--save_path_root', help='File path to save to', type=str, required=False, default='../results')
     parser.add_argument('--seed', help='Randomized seed', type=int, required=False, default=5678)
-    parser.add_argument('--device', help='Device to run on',type=str, required=False, default='cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--device', help='Device to run on',type=str, required=False, default=get_optimal_device())
     parser.add_argument('--mean_activations_path', help='Path to file containing mean_head_activations for the specified task', required=False, type=str, default=None)
     parser.add_argument('--test_split', help="Percentage corresponding to test set split size", required=False, default=0.3)    
     parser.add_argument('--n_shots', help="Number of shots in each in-context prompt", type=int, required=False, default=10)

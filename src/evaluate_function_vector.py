@@ -22,7 +22,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_path_root', help='File path to save to', type=str, required=False, default='../results')
     parser.add_argument('--ie_path_root', help='File path to load indirect effects from', type=str, required=False, default=None)
     parser.add_argument('--seed', help='Randomized seed', type=int, required=False, default=42)
-    parser.add_argument('--device', help='Device to run on',type=str, required=False, default='cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--device', help='Device to run on',type=str, required=False, default='cuda' if torch.cuda.is_available() else 'mps')
     parser.add_argument('--mean_activations_path', help='Path to file containing mean_head_activations for the specified task', required=False, type=str, default=None)
     parser.add_argument('--indirect_effect_path', help='Path to file containing indirect_effect scores for the specified task', required=False, type=str, default=None)    
     parser.add_argument('--test_split', help="Percentage corresponding to test set split size", required=False, default=0.3)    
@@ -33,6 +33,10 @@ if __name__ == "__main__":
     parser.add_argument('--separators', help='Prompt template separators to be used', type=json.loads, required=False, default={"input":"\n", "output":"\n\n", "instructions":""})    
     parser.add_argument('--compute_baseline', help='Whether to compute the model baseline 0-shot -> n-shot performance', type=bool, required=False, default=True)
     parser.add_argument('--generate_str', help='Whether to generate long-form completions for the task', action='store_true', required=False)
+    parser.add_argument('--generate_cot', help='Whether to generate chain-of-thoughts for the task (CoT unaffected by FV intervention)', action='store_true', required=False)
+    parser.add_argument('--fv_cot', help='Whether to generate FV-intervened chain-of-thoughts for the task', action='store_true', required=False)
+    parser.add_argument('--cot_length', help="Maximum length of the generated chain-of-thought", type=int, required=False, default=50)
+    parser.add_argument('--cot_instruct', help='Whether to generate CoTs in Llama-Instruct format (default is R1-Distilled-Llama-8B)', action='store_true', required=False)
     parser.add_argument("--metric", help="Metric to use when evaluating generated strings", type=str, required=False, default="f1_score")
     parser.add_argument("--universal_set", help="Flag for whether to evaluate using the univeral set of heads", action="store_true", required=False)
     parser.add_argument('--revision', help='Specify model checkpoints for pythia or olmo models', type=str, required=False, default=None)
@@ -60,6 +64,10 @@ if __name__ == "__main__":
     separators = args.separators
     compute_baseline = args.compute_baseline
 
+    generate_cot = args.generate_cot
+    fv_cot = args.fv_cot
+    cot_length = args.cot_length
+    cot_instruct = args.cot_instruct
     generate_str = args.generate_str
     metric = args.metric
     universal_set = args.universal_set
@@ -72,7 +80,8 @@ if __name__ == "__main__":
     model, tokenizer, model_config = load_gpt_model_and_tokenizer(model_name, device=device, revision=args.revision)
 
     if args.edit_layer == -1: # sweep over all layers if edit_layer=-1
-        eval_edit_layer = [0, model_config['n_layers']]
+        # eval_edit_layer = [0, model_config['n_layers']]
+        eval_edit_layer = [8, 16] #Llama8B restricted exp: only 8 layers eval to save time
 
     # Load the dataset
     print("Loading Dataset")
@@ -158,10 +167,12 @@ if __name__ == "__main__":
             pred_filepath = f"{save_path_root}/preds/{model_config['name_or_path'].replace('/', '_')}_ZS_intervention_layer{eval_edit_layer}.txt"
             zs_results = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=eval_edit_layer, n_shots=0,
                                      model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set,
-                                     generate_str=generate_str, metric=metric, pred_filepath=pred_filepath, prefixes=prefixes, separators=separators)
+                                     generate_str=generate_str, metric=metric, pred_filepath=pred_filepath, prefixes=prefixes, separators=separators,
+                                     allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
         else:
             zs_results = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=eval_edit_layer, n_shots=0,
-                                    model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set, prefixes=prefixes, separators=separators)
+                                    model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set, prefixes=prefixes, separators=separators,
+                                    allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
         zs_results_file_suffix = f'_editlayer_{eval_edit_layer}.json'   
 
 
@@ -171,10 +182,12 @@ if __name__ == "__main__":
             pred_filepath = f"{save_path_root}/preds/{model_config['name_or_path'].replace('/', '_')}_{n_shots}shots_shuffled_intervention_layer{eval_edit_layer}.txt"
             fs_shuffled_results = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=eval_edit_layer, n_shots=n_shots, 
                                               model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set, shuffle_labels=True,
-                                              generate_str=generate_str, metric=metric, pred_filepath=pred_filepath, prefixes=prefixes, separators=separators)
+                                              generate_str=generate_str, metric=metric, pred_filepath=pred_filepath, prefixes=prefixes, separators=separators,
+                                              allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
         else:
             fs_shuffled_results = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=eval_edit_layer, n_shots=n_shots, 
-                                              model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set, shuffle_labels=True, prefixes=prefixes, separators=separators)
+                                              model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set, shuffle_labels=True, prefixes=prefixes, separators=separators,
+                                              allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
         fs_shuffled_results_file_suffix = f'_editlayer_{eval_edit_layer}.json'   
         
     else:
@@ -186,18 +199,22 @@ if __name__ == "__main__":
             if generate_str:
                 zs_results[edit_layer] = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=edit_layer, n_shots=0, 
                                                     model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set,
-                                                    generate_str=generate_str, metric=metric, prefixes=prefixes, separators=separators)
+                                                    generate_str=generate_str, metric=metric, prefixes=prefixes, separators=separators,
+                                                    allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
             else:
                 zs_results[edit_layer] = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=edit_layer, n_shots=0, prefixes=prefixes, separators=separators,
-                                                    model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set)
+                                                    model=model, model_config=model_config, tokenizer=tokenizer, filter_set=filter_set,
+                                                    allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
             set_seed(seed)
             if generate_str:
                 fs_shuffled_results[edit_layer] = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=edit_layer, n_shots=n_shots, 
                                                     model=model, model_config=model_config, tokenizer=tokenizer, filter_set = filter_set,
-                                                    generate_str=generate_str, metric=metric, shuffle_labels=True, prefixes=prefixes, separators=separators)
+                                                    generate_str=generate_str, metric=metric, shuffle_labels=True, prefixes=prefixes, separators=separators,
+                                                    allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
             else:
                 fs_shuffled_results[edit_layer] = n_shot_eval(dataset=dataset, fv_vector=fv, edit_layer=edit_layer, n_shots=n_shots, 
-                                                    model=model, model_config=model_config, tokenizer=tokenizer, filter_set = filter_set, shuffle_labels=True, prefixes=prefixes, separators=separators)
+                                                    model=model, model_config=model_config, tokenizer=tokenizer, filter_set = filter_set, shuffle_labels=True, prefixes=prefixes, separators=separators,
+                                                    allow_cot=generate_cot, fv_cot=fv_cot, cot_length=cot_length, cot_instruct=cot_instruct)
         zs_results_file_suffix = '_layer_sweep.json'
         fs_shuffled_results_file_suffix = '_layer_sweep.json'
 

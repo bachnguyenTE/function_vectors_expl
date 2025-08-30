@@ -207,7 +207,7 @@ def sentence_eval(sentence, target, model, tokenizer, compute_nll=True, generate
 
 def n_shot_eval(dataset, fv_vector, edit_layer: int, n_shots: int, model, model_config, tokenizer, shuffle_labels:bool=False,
                 filter_set=None, prefixes=None, separators=None, generate_str=False, pred_filepath=None,
-                metric="f1_score"):
+                metric="f1_score", allow_cot=False, fv_cot=False, cot_length=100, cot_instruct=False):
     """
     Evaluate a model and FV intervention on the model using the provided ICL dataset.
 
@@ -226,6 +226,10 @@ def n_shot_eval(dataset, fv_vector, edit_layer: int, n_shots: int, model, model_
     generate_str: whether to generate a string of tokens or predict a single token
     pred_filepath: filepath to save intermediate generations for debugging
     metric: metric to use for longer generations (F1, exact match, etc.)
+    allow_cot: generate a CoT to append to a model before re-appending the sentence prompt back
+    fv_cot: generate FV-intervened CoT for the above
+    cot_length: max length of the CoT
+    cot_instruct: generate CoTs intended for Llama Instruct
 
     Returns:
     results: dict of topk accuracy on the test dataset, for both the model's n-shot, and n-shot + FV intervention, as well as the token rank of each prediction
@@ -271,8 +275,52 @@ def n_shot_eval(dataset, fv_vector, edit_layer: int, n_shots: int, model, model_
             target = [target] if not isinstance(target, list) else target
         else:
             target = target[0] if isinstance(target, list) else target
-        
-        sentence = [create_prompt(prompt_data)]
+
+        # Generate a CoT sandwiched between two copies of the sentence template
+        if allow_cot:
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+            if not cot_instruct:
+                inputs = tokenizer.apply_chat_template(
+                    [
+                        {"role": "user", "content": create_prompt(prompt_data)},
+                    ],
+                    add_generation_prompt=True,
+                    return_tensors="pt",
+                ).to(model.device)
+
+                # Create the attention mask manually
+                attention_mask = torch.ones_like(inputs)
+
+                outputs = None
+                with torch.no_grad():
+                    outputs = model.generate(input_ids=inputs, 
+                                            max_new_tokens=cot_length, 
+                                            temperature=1.0,
+                                            attention_mask=attention_mask,
+                                            pad_token_id=tokenizer.eos_token_id)
+            else:
+                inputs = tokenizer(
+                    "You are a helpful AI assistant that will answer reasoning questions step by step.\n\n" + create_prompt(prompt_data),
+                    return_tensors="pt"
+                ).to(model.device)
+
+                # Create the attention mask manually
+                attention_mask = torch.ones_like(inputs.input_ids)
+
+                outputs = None
+                with torch.no_grad():
+                    outputs = model.generate(input_ids=inputs.input_ids, 
+                                            max_new_tokens=cot_length, 
+                                            temperature=1.0,
+                                            attention_mask=attention_mask,
+                                            pad_token_id=tokenizer.eos_token_id)
+                    
+            decoded_text = tokenizer.decode(outputs[0])
+            sentence = [decoded_text+'\n'+create_prompt(prompt_data)]
+        else:
+            sentence = [create_prompt(prompt_data)]
         
         # Figure out token of interest        
         target_token_id = get_answer_id(sentence[0], target, tokenizer)
@@ -289,7 +337,8 @@ def n_shot_eval(dataset, fv_vector, edit_layer: int, n_shots: int, model, model_
             clean_output, intervention_output = function_vector_intervention(sentence, target = target, edit_layer = edit_layer, 
                                                                             function_vector = fv_vector,
                                                                             model=model, model_config=model_config, tokenizer=tokenizer, 
-                                                                            compute_nll=False, generate_str=generate_str)
+                                                                            compute_nll=False, generate_str=generate_str,
+                                                                            fv_cot=fv_cot, cot_length=cot_length)
             clean_parsed_str, clean_score = parse_generation(clean_output, target, metric_fn)
             intervention_parsed_str, intervention_score = parse_generation(intervention_output, target, metric_fn)
             
@@ -303,7 +352,7 @@ def n_shot_eval(dataset, fv_vector, edit_layer: int, n_shots: int, model, model_
             clean_output, intervention_output = function_vector_intervention(sentence, target = [target], edit_layer = edit_layer, 
                                                                               function_vector = fv_vector,
                                                                               model=model, model_config=model_config, tokenizer=tokenizer, 
-                                                                              compute_nll=False) 
+                                                                              compute_nll=False, fv_cot=fv_cot, cot_length=cot_length) 
         
 
             clean_rank = compute_individual_token_rank(clean_output, target_token_id)

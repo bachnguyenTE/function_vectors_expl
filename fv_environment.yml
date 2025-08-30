@@ -3,11 +3,11 @@ name: fv
 channels:
  - pytorch
  - huggingface
- - nvidia
+ # - nvidia  # Not needed on macOS, only for CUDA systems
  - defaults
 dependencies:
   - python=3.10
-  - cudatoolkit=11.7.0
+  #- cudatoolkit=11.8.0 # Not available on MacOS
   - datasets=2.14.3
   - jupyter=1.0.0
   - matplotlib=3.7.1
@@ -23,6 +23,6 @@ dependencies:
   - tqdm=4.65.0
   - pip:
     - git+https://github.com/davidbau/baukit@main#egg=baukit
-    - bitsandbytes==0.45.3
+    - bitsandbytes
     - huggingface-hub==0.29.3
     - accelerate==0.21.0

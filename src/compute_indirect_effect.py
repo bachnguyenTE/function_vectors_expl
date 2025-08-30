@@ -9,6 +9,7 @@ from utils.prompt_utils import *
 from utils.intervention_utils import *
 from utils.model_utils import *
 from utils.extract_utils import *
+from utils.device_utils import get_optimal_device
 
 
 def activation_replacement_per_class_intervention(prompt_data, avg_activations, dummy_labels, model, model_config, tokenizer, last_token_only=True):
@@ -158,7 +159,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_shots', help="Number of shots in each in-context prompt", type =int, required=False, default=10)
     parser.add_argument('--n_trials', help="Number of in-context prompts to average over", type=int, required=False, default=25)
     parser.add_argument('--test_split', help="Percentage corresponding to test set split size", required=False, default=0.3)
-    parser.add_argument('--device', help='Device to run on',type=str, required=False, default='cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--device', help='Device to run on',type=str, required=False, default=get_optimal_device())
     parser.add_argument('--mean_activations_path', help='Path to mean activations file used for intervention', required=False, type=str, default=None)
     parser.add_argument('--last_token_only', help='Whether to compute indirect effect for heads at only the final token position, or for all token classes', required=False, type=bool, default=True)
     parser.add_argument('--prefixes', help='Prompt template prefixes to be used', type=json.loads, required=False, default={"input":"Q:", "output":"A:", "instructions":""})

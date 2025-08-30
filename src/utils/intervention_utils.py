@@ -78,7 +78,7 @@ def replace_activation_w_avg(layer_head_token_pairs, avg_activations, model, mod
                 out_proj_bias = proj_module.bias
                 new_output = torch.addmm(out_proj_bias, inputs.squeeze(), out_proj.T)
             
-            elif 'llama' in model_config['name_or_path']:
+            elif 'llama' in model_config['name_or_path'].lower():
                 if '70b' in model_config['name_or_path']:
                     # need to dequantize weights
                     out_proj_dequant = bnb.functional.dequantize_4bit(out_proj.data, out_proj.quant_state)
@@ -122,7 +122,7 @@ def add_function_vector(edit_layer, fv_vector, device, idx=-1):
     return add_act
 
 def function_vector_intervention(sentence, target, edit_layer, function_vector, model, model_config, tokenizer, compute_nll=False,
-                                  generate_str=False):
+                                  generate_str=False, fv_cot=False, cot_length=100):
     """
     Runs the model on the sentence and adds the function_vector to the output of edit_layer as a model intervention, predicting a single token.
     Returns the output of the model with and without intervention.
@@ -137,6 +137,8 @@ def function_vector_intervention(sentence, target, edit_layer, function_vector, 
     tokenizer: huggingface tokenizer
     compute_nll: whether to compute the negative log likelihood of a teacher-forced completion (used to compute perplexity (PPL))
     generate_str: whether to generate a string of tokens or predict a single token
+    fv_cot: generate FV-intervened CoT for the above
+    cot_length: max length of the CoT
 
     Returns:
     fvi_output: a tuple containing output results of a clean run and intervened run of the model
@@ -177,6 +179,23 @@ def function_vector_intervention(sentence, target, edit_layer, function_vector, 
             output = model.generate(inputs.input_ids, top_p=0.9, temperature=0.1,
                                     max_new_tokens=MAX_NEW_TOKENS)
             intervention_output = tokenizer.decode(output.squeeze()[-MAX_NEW_TOKENS:])
+        elif fv_cot:
+            long_inputs = tokenizer.apply_chat_template(
+                    [
+                        {"role": "user", "content": sentence[0]},
+                    ],
+                    add_generation_prompt=True,
+                    return_tensors="pt",
+                    return_attention_mask=True,
+                    return_dict=True
+                ).to(model.device)
+            cot_inputs = model.generate(**long_inputs, 
+                                    max_new_tokens=cot_length, 
+                                    temperature=1.0,
+                                    pad_token_id=tokenizer.eos_token_id)
+            cot_inputs = {'input_ids': cot_inputs, 'attention_mask': torch.ones_like(cot_inputs)}
+            combined_cot_inputs= {key: torch.cat((cot_inputs[key], inputs[key]), dim=1) for key in inputs}
+            intervention_output = model(**combined_cot_inputs).logits[:,-1,:] # batch_size x n_tokens x vocab_size, only want last token prediction
         else:
             intervention_output = model(**inputs).logits[:,-1,:] # batch_size x n_tokens x vocab_size, only want last token prediction
     
