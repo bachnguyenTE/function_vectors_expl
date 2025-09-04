@@ -122,7 +122,7 @@ def add_function_vector(edit_layer, fv_vector, device, idx=-1):
     return add_act
 
 def function_vector_intervention(sentence, target, edit_layer, function_vector, model, model_config, tokenizer, compute_nll=False,
-                                  generate_str=False, fv_cot=False, cot_length=100):
+                                  generate_str=False, fv_cot=False, cot_instruct=False, cot_length=100):
     """
     Runs the model on the sentence and adds the function_vector to the output of edit_layer as a model intervention, predicting a single token.
     Returns the output of the model with and without intervention.
@@ -138,6 +138,7 @@ def function_vector_intervention(sentence, target, edit_layer, function_vector, 
     compute_nll: whether to compute the negative log likelihood of a teacher-forced completion (used to compute perplexity (PPL))
     generate_str: whether to generate a string of tokens or predict a single token
     fv_cot: generate FV-intervened CoT for the above
+    cot_instruct: generate CoT in specified format for Llama-3.1-8B-Instruct model
     cot_length: max length of the CoT
 
     Returns:
@@ -180,7 +181,8 @@ def function_vector_intervention(sentence, target, edit_layer, function_vector, 
                                     max_new_tokens=MAX_NEW_TOKENS)
             intervention_output = tokenizer.decode(output.squeeze()[-MAX_NEW_TOKENS:])
         elif fv_cot:
-            long_inputs = tokenizer.apply_chat_template(
+            if not cot_instruct:
+                long_inputs = tokenizer.apply_chat_template(
                     [
                         {"role": "user", "content": sentence[0]},
                     ],
@@ -188,6 +190,12 @@ def function_vector_intervention(sentence, target, edit_layer, function_vector, 
                     return_tensors="pt",
                     return_attention_mask=True,
                     return_dict=True
+                ).to(model.device)
+            else:
+                long_inputs = tokenizer(
+                    "You are a helpful AI assistant that will answer reasoning questions step by step.\n\n" + sentence[0],
+                    return_tensors="pt",
+                    return_attention_mask=True
                 ).to(model.device)
             cot_inputs = model.generate(**long_inputs, 
                                     max_new_tokens=cot_length, 

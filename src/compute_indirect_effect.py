@@ -12,7 +12,7 @@ from utils.extract_utils import *
 from utils.device_utils import get_optimal_device
 
 
-def activation_replacement_per_class_intervention(prompt_data, avg_activations, dummy_labels, model, model_config, tokenizer, last_token_only=True):
+def activation_replacement_per_class_intervention(prompt_data, avg_activations, dummy_labels, model, model_config, tokenizer, last_token_only=True, with_cot=False, cot_length=100):
     """
     Experiment to determine top intervention locations through avg activation replacement. 
     Performs a systematic sweep over attention heads (layer, head) to track their causal influence on probs of key tokens.
@@ -25,6 +25,8 @@ def activation_replacement_per_class_intervention(prompt_data, avg_activations, 
     model_config: contains model config information (n layers, n heads, etc.)
     tokenizer: huggingface tokenizer
     last_token_only: If True, only computes indirect effect for heads at the final token position. If False, computes indirect_effect for heads for all token classes
+    with_cot: If True, compute indirect effect with generated CoT of specified length included
+    cot_length: length of the CoT to compute indirect effect with
 
     Returns:   
     indirect_effect_storage: torch tensor containing the indirect_effect of each head for each token class.
@@ -64,6 +66,25 @@ def activation_replacement_per_class_intervention(prompt_data, avg_activations, 
 
     indirect_effect_storage = torch.zeros(model_config['n_layers'], model_config['n_heads'],len(token_classes))
 
+    # Generate the CoT and sandwich with the original inputs
+    if with_cot:
+        long_inputs = tokenizer.apply_chat_template(
+            [
+                {"role": "user", "content": sentences[0]},
+            ],
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_attention_mask=True,
+            return_dict=True
+        ).to(model.device)
+        cot_inputs = model.generate(**long_inputs, 
+                                    max_new_tokens=cot_length, 
+                                    temperature=1.0,
+                                    pad_token_id=tokenizer.eos_token_id)
+        cot_inputs = {'input_ids': cot_inputs, 'attention_mask': torch.ones_like(cot_inputs)}
+        combined_cot_inputs = {key: torch.cat((cot_inputs[key], inputs[key]), dim=1) for key in inputs}
+        inputs = combined_cot_inputs
+
     # Clean Run of Baseline:
     clean_output = model(**inputs).logits[:,-1,:]
     clean_probs = torch.softmax(clean_output[0], dim=-1)
@@ -91,7 +112,7 @@ def activation_replacement_per_class_intervention(prompt_data, avg_activations, 
     return indirect_effect_storage
 
 
-def compute_indirect_effect(dataset, mean_activations, model, model_config, tokenizer, n_shots=10, n_trials=25, last_token_only=True, prefixes=None, separators=None, filter_set=None):
+def compute_indirect_effect(dataset, mean_activations, model, model_config, tokenizer, n_shots=10, n_trials=25, last_token_only=True, prefixes=None, separators=None, filter_set=None, with_cot=False, cot_length=100):
     """
     Computes Indirect Effect of each head in the model
 
@@ -141,7 +162,8 @@ def compute_indirect_effect(dataset, mean_activations, model, model_config, toke
                                                                     avg_activations = mean_activations, 
                                                                     dummy_labels=dummy_gt_labels, 
                                                                     model=model, model_config=model_config, tokenizer=tokenizer, 
-                                                                    last_token_only=last_token_only)
+                                                                    last_token_only=last_token_only,
+                                                                    with_cot=with_cot, cot_length=cot_length)
         indirect_effect[i] = ind_effects.squeeze()
 
     return indirect_effect

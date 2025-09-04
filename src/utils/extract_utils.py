@@ -1,4 +1,5 @@
 import os, re, json
+from tqdm import tqdm
 
 import torch, numpy as np
 import pandas as pd
@@ -12,7 +13,7 @@ from .eval_utils import *
 
 
 # Attention Activations
-def gather_attn_activations(prompt_data, layers, dummy_labels, model, tokenizer, model_config):
+def gather_attn_activations(prompt_data, layers, dummy_labels, model, tokenizer, model_config, with_cot=False, cot_length=100):
     """
     Collects activations for an ICL prompt 
 
@@ -22,6 +23,8 @@ def gather_attn_activations(prompt_data, layers, dummy_labels, model, tokenizer,
     dummy_labels: labels and indices for a baseline prompt with the same number of example pairs
     model: huggingface model
     tokenizer: huggingface tokenizer
+    with_cot: calculate the activations with generated CoT
+    cot_length: max length of the CoT to generate and sandwich with original inputs
 
     Returns:
     td: tracedict with stored activations
@@ -37,13 +40,32 @@ def gather_attn_activations(prompt_data, layers, dummy_labels, model, tokenizer,
     inputs = tokenizer(sentence, return_tensors='pt').to(model.device)
     idx_map, idx_avg = compute_duplicated_labels(token_labels, dummy_labels)
 
+    # Generate the CoT of specified length to sandwich between copies of the original inputs
+    if with_cot:
+        long_inputs = tokenizer.apply_chat_template(
+            [
+                {"role": "user", "content": sentence[0]},
+            ],
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_attention_mask=True,
+            return_dict=True
+        ).to(model.device)
+        cot_inputs = model.generate(**long_inputs, 
+                                    max_new_tokens=cot_length, 
+                                    temperature=1.0,
+                                    pad_token_id=tokenizer.eos_token_id)
+        cot_inputs = {'input_ids': cot_inputs, 'attention_mask': torch.ones_like(cot_inputs)}
+        combined_cot_inputs = {key: torch.cat((cot_inputs[key], inputs[key]), dim=1) for key in inputs}
+        inputs = combined_cot_inputs
+
     # Access Activations 
     with TraceDict(model, layers=layers, retain_input=True, retain_output=False) as td:                
         model(**inputs) # batch_size x n_tokens x vocab_size, only want last token prediction
 
     return td, idx_map, idx_avg
 
-def get_mean_head_activations(dataset, model, model_config, tokenizer, n_icl_examples = 10, N_TRIALS = 100, shuffle_labels=False, prefixes=None, separators=None, filter_set=None):
+def get_mean_head_activations(dataset, model, model_config, tokenizer, n_icl_examples = 10, N_TRIALS = 100, shuffle_labels=False, prefixes=None, separators=None, filter_set=None, with_cot=False, cot_length=100):
     """
     Computes the average activations for each attention head in the model, where multi-token phrases are condensed into a single slot through averaging.
 
@@ -58,6 +80,8 @@ def get_mean_head_activations(dataset, model, model_config, tokenizer, n_icl_exa
     prefixes: ICL template prefixes
     separators: ICL template separators
     filter_set: whether to only include samples the model gets correct via ICL
+    with_cot: calculate the activations with generated CoT
+    cot_length: max length of the CoT to generate and sandwich with original inputs
 
     Returns:
     mean_activations: avg activation of each attention head in the model taken across n_trials ICL prompts
@@ -80,7 +104,7 @@ def get_mean_head_activations(dataset, model, model_config, tokenizer, n_icl_exa
     # If the model already prepends a bos token by default, we don't want to add one
     prepend_bos =  False if model_config['prepend_bos'] else True
 
-    for n in range(N_TRIALS):
+    for n in tqdm(range(N_TRIALS)):
         word_pairs = dataset['train'][np.random.choice(len(dataset['train']),n_icl_examples, replace=False)]
         word_pairs_test = dataset['valid'][np.random.choice(filter_set,n_test_examples, replace=False)]
         if prefixes is not None and separators is not None:
@@ -93,7 +117,9 @@ def get_mean_head_activations(dataset, model, model_config, tokenizer, n_icl_exa
                                                             dummy_labels=dummy_labels, 
                                                             model=model, 
                                                             tokenizer=tokenizer, 
-                                                            model_config=model_config)
+                                                            model_config=model_config,
+                                                            with_cot=with_cot,
+                                                            cot_length=cot_length)
         
         stack_initial = torch.vstack([split_activations_by_head(activations_td[layer].input, model_config) for layer in model_config['attn_hook_names']]).permute(0,2,1,3)
         stack_filtered = stack_initial[:,:,list(idx_map.keys())]

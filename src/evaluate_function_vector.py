@@ -22,7 +22,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_path_root', help='File path to save to', type=str, required=False, default='../results')
     parser.add_argument('--ie_path_root', help='File path to load indirect effects from', type=str, required=False, default=None)
     parser.add_argument('--seed', help='Randomized seed', type=int, required=False, default=42)
-    parser.add_argument('--device', help='Device to run on',type=str, required=False, default='cuda' if torch.cuda.is_available() else 'mps')
+    parser.add_argument('--device', help='Device to run on',type=str, required=False, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--mean_activations_path', help='Path to file containing mean_head_activations for the specified task', required=False, type=str, default=None)
     parser.add_argument('--indirect_effect_path', help='Path to file containing indirect_effect scores for the specified task', required=False, type=str, default=None)    
     parser.add_argument('--test_split', help="Percentage corresponding to test set split size", required=False, default=0.3)    
@@ -37,6 +37,7 @@ if __name__ == "__main__":
     parser.add_argument('--fv_cot', help='Whether to generate FV-intervened chain-of-thoughts for the task', action='store_true', required=False)
     parser.add_argument('--cot_length', help="Maximum length of the generated chain-of-thought", type=int, required=False, default=50)
     parser.add_argument('--cot_instruct', help='Whether to generate CoTs in Llama-Instruct format (default is R1-Distilled-Llama-8B)', action='store_true', required=False)
+    parser.add_argument('--fv_from_cot', help='Whether to generate FV from CoT-containing prompts for the task, also include CoT generation in indirect effect computation', action='store_true', required=False)
     parser.add_argument("--metric", help="Metric to use when evaluating generated strings", type=str, required=False, default="f1_score")
     parser.add_argument("--universal_set", help="Flag for whether to evaluate using the univeral set of heads", action="store_true", required=False)
     parser.add_argument('--revision', help='Specify model checkpoints for pythia or olmo models', type=str, required=False, default=None)
@@ -68,6 +69,7 @@ if __name__ == "__main__":
     fv_cot = args.fv_cot
     cot_length = args.cot_length
     cot_instruct = args.cot_instruct
+    fv_from_cot = args.fv_from_cot
     generate_str = args.generate_str
     metric = args.metric
     universal_set = args.universal_set
@@ -80,8 +82,8 @@ if __name__ == "__main__":
     model, tokenizer, model_config = load_gpt_model_and_tokenizer(model_name, device=device, revision=args.revision)
 
     if args.edit_layer == -1: # sweep over all layers if edit_layer=-1
-        # eval_edit_layer = [0, model_config['n_layers']]
-        eval_edit_layer = [8, 16] #Llama8B restricted exp: only 8 layers eval to save time
+        eval_edit_layer = [0, model_config['n_layers']]
+        # eval_edit_layer = [8, 16] #Llama8B restricted exp: only 8 layers eval to save time
 
     # Load the dataset
     print("Loading Dataset")
@@ -135,7 +137,8 @@ if __name__ == "__main__":
         print("Computing Mean Activations")
         set_seed(seed)
         mean_activations = get_mean_head_activations(dataset, model=model, model_config=model_config, tokenizer=tokenizer, n_icl_examples=n_shots,
-                                                     N_TRIALS=n_mean_activations_trials, prefixes=prefixes, separators=separators, filter_set=filter_set_validation)
+                                                     N_TRIALS=n_mean_activations_trials, prefixes=prefixes, separators=separators, filter_set=filter_set_validation,
+                                                     with_cot=fv_from_cot, cot_length=cot_length)
         args.mean_activations_path = f'{save_path_root}/{dataset_name}_mean_head_activations.pt'
         torch.save(mean_activations, args.mean_activations_path)
 
@@ -149,7 +152,8 @@ if __name__ == "__main__":
         print("Computing Indirect Effects")
         set_seed(seed)
         indirect_effect = compute_indirect_effect(dataset, mean_activations, model=model, model_config=model_config, tokenizer=tokenizer, n_shots=n_shots,
-                                                  n_trials=n_indirect_effect_trials, last_token_only=True, prefixes=prefixes, separators=separators, filter_set=filter_set_validation)
+                                                  n_trials=n_indirect_effect_trials, last_token_only=True, prefixes=prefixes, separators=separators, filter_set=filter_set_validation,
+                                                  with_cot=fv_from_cot, cot_length=cot_length)
         args.indirect_effect_path = f'{save_path_root}/{dataset_name}_indirect_effect.pt'
         torch.save(indirect_effect, args.indirect_effect_path)
         

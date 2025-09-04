@@ -14,10 +14,10 @@ def get_optimal_device():
     Returns:
         str: Device string ('mps', 'cuda', or 'cpu')
     """
-    if platform.system() == "Darwin" and torch.backends.mps.is_available():
-        return "mps"
-    elif torch.cuda.is_available():
+    if torch.cuda.is_available():
         return "cuda"
+    elif platform.system() == "Darwin" and torch.backends.mps.is_available():
+        return "mps"
     else:
         return "cpu"
 

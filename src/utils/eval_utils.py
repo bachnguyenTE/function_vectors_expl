@@ -338,7 +338,7 @@ def n_shot_eval(dataset, fv_vector, edit_layer: int, n_shots: int, model, model_
                                                                             function_vector = fv_vector,
                                                                             model=model, model_config=model_config, tokenizer=tokenizer, 
                                                                             compute_nll=False, generate_str=generate_str,
-                                                                            fv_cot=fv_cot, cot_length=cot_length)
+                                                                            fv_cot=fv_cot, cot_instruct=cot_instruct, cot_length=cot_length)
             clean_parsed_str, clean_score = parse_generation(clean_output, target, metric_fn)
             intervention_parsed_str, intervention_score = parse_generation(intervention_output, target, metric_fn)
             
@@ -352,7 +352,7 @@ def n_shot_eval(dataset, fv_vector, edit_layer: int, n_shots: int, model, model_
             clean_output, intervention_output = function_vector_intervention(sentence, target = [target], edit_layer = edit_layer, 
                                                                               function_vector = fv_vector,
                                                                               model=model, model_config=model_config, tokenizer=tokenizer, 
-                                                                              compute_nll=False, fv_cot=fv_cot, cot_length=cot_length) 
+                                                                              compute_nll=False, fv_cot=fv_cot, cot_instruct=cot_instruct, cot_length=cot_length) 
         
 
             clean_rank = compute_individual_token_rank(clean_output, target_token_id)
