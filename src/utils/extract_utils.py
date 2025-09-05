@@ -117,9 +117,9 @@ def get_mean_head_activations(dataset, model, model_config, tokenizer, n_icl_exa
                                                             dummy_labels=dummy_labels, 
                                                             model=model, 
                                                             tokenizer=tokenizer, 
-                                                            model_config=model_config,
-                                                            with_cot=with_cot,
-                                                            cot_length=cot_length)
+                                                            model_config=model_config,)
+                                                            #with_cot=with_cot,
+                                                            #cot_length=cot_length)
         
         stack_initial = torch.vstack([split_activations_by_head(activations_td[layer].input, model_config) for layer in model_config['attn_hook_names']]).permute(0,2,1,3)
         stack_filtered = stack_initial[:,:,list(idx_map.keys())]
